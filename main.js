@@ -50,7 +50,6 @@ class BacklinksBreadcrumbsPlugin extends obsidian.Plugin {
 
     drawBreadcrumbs () {
         const file = this.app.workspace.getActiveFile();
-        debugger;
         const backlinks = this.processBacklinks(file);
         const breadcrumbs = this.generateBreadCrumbs(backlinks);
 
@@ -117,6 +116,7 @@ class BacklinksBreadcrumbsPlugin extends obsidian.Plugin {
 
                 // Continue recursively until at Home or reached the maximum depth
                 if (!this.isHome(backlink) && result.length < Number(this.settings.maxDepth)) {
+                    let parentDirectory = backlink.split('/').slice(0, -1).join('/');
                     this.processBacklinks(this.getFileByPath(backlink), result);
                 }
             }
@@ -125,19 +125,11 @@ class BacklinksBreadcrumbsPlugin extends obsidian.Plugin {
     }
 
     getParentFromMetadata(file) {
-        let parent;
-        // Why use Dataview ? To be able to use inline fields as well as Front Matter
-        const dataviewApi = this.app.plugins.plugins.dataview?.api;
-        if (dataviewApi) {
-            parent = dataviewApi.page(file.path)?.parent;
-        } else {
-            // No Dataview API, let's try Front Matter
-            parent = this.app.metadataCache.getFileCache(file)?.frontmatter?.parent;
-        }
+        let parent = file?.parent?.path
 
         // Have we found a parent metadata ?
         if (parent) {
-            const parentFile = this.getFileByPath(`${parent}.md`);
+            const parentFile = this.getFileByPath(`${parent}`);
             // Ensure we have a valid parent path metadata
             if (parentFile) {
                 return parentFile.path;
@@ -148,7 +140,7 @@ class BacklinksBreadcrumbsPlugin extends obsidian.Plugin {
     }
 
     isHome(path) {
-        return path === `${this.settings.home}.md`;
+        return path === `${this.settings.home}`;
     }
 
     getFileByPath(path) {
@@ -162,21 +154,21 @@ class BacklinksBreadcrumbsPlugin extends obsidian.Plugin {
     }
 
     createLink(target) {
+        if (target == '/') {
+            return createEl('span', {
+                text: '🏠'
+            });
+        }
+        let file = this.getFileByPath(target)
         const link = createEl('span', {
-            cls: 'internal-link',
+            text: file.name,
+            cls: 'internal-link'
         });
-        link.innerText = this.getFileBaseNameFromPath(target);
-        link.addEventListener('click', (e) => {
-            openOrSwitch(target, e); // This async/await is useless
+        link.addEventListener('click', async (e) => {
+            e.preventDefault();
+            await openOrSwitch(file.path, e); // This async/await is useless
         });
         return link;
-    }
-
-    getFileBaseNameFromPath(path) {
-        // Keep only the file name, without extension or path
-        let name = path.substring(0, path.lastIndexOf('.')) || path;
-        name = name.substring(name.lastIndexOf('/') + 1, name.length) || name;
-        return name;
     }
 }
 
@@ -186,9 +178,17 @@ module.exports = BacklinksBreadcrumbsPlugin;
 // Source: https://github.com/obsidian-community/obsidian-community-lib/blob/3721e6f73c610c59a95c8f6eb9c361f625050353/dist/utils.js#L180
 // Doc: https://obsidian-community.github.io/obsidian-community-lib/modules.html#openOrSwitch
 // License: ISC
-async function openOrSwitch(dest, event, options = { createNewFile: true }) {
+async function openOrSwitch(dest, event, options = { createNewFile: false }) {
     const { workspace } = app;
-    let destFile = app.metadataCache.getFirstLinkpathDest(dest, "");
+    let destFile = this.app.vault.getAbstractFileByPath(dest);
+
+    // Check if it's folder note
+    const folderNoteFile = this.app.vault.getAbstractFileByPath(`${destFile.path}/${destFile.name}.md`);
+    if (folderNoteFile) {
+        // Open existing folder note
+        destFile = folderNoteFile;
+    }
+
     // If dest doesn't exist, make it
     if (!destFile && options.createNewFile) {
         destFile = await createNewMDNote(dest);
@@ -211,12 +211,8 @@ async function openOrSwitch(dest, event, options = { createNewFile: true }) {
     if (leavesWithDestAlreadyOpen.length > 0) {
         workspace.setActiveLeaf(leavesWithDestAlreadyOpen[0]);
     } else {
-        const mode = app.vault.getConfig("defaultViewMode");
-        const leaf = event.ctrlKey || event.getModifierState("Meta")
-            ? workspace.splitActiveLeaf()
-            : workspace.getUnpinnedLeaf();
-            // This is not how a ternary operator should be used
-        await leaf.openFile(destFile, { active: true, mode });
+        const leaf = this.app.workspace.getLeaf(false);
+        await leaf.openFile(destFile);
     }
 }
 
