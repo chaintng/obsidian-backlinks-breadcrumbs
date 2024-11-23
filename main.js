@@ -50,6 +50,7 @@ class BacklinksBreadcrumbsPlugin extends obsidian.Plugin {
 
     drawBreadcrumbs () {
         const file = this.app.workspace.getActiveFile();
+        debugger;
         const backlinks = this.processBacklinks(file);
         const breadcrumbs = this.generateBreadCrumbs(backlinks);
 
